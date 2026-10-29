@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flock Energy — Urja Meter Ops Modern API Console</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    .tree-node { transition: all 0.2s ease; }
+    .tree-children { margin-left: 1.25rem; border-left: 2px dashed #e2e8f0; padding-left: 0.75rem; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col font-sans">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-lg bg-emerald-600 flex items-center justify-center text-white font-bold text-lg shadow-sm">
+          <i class="fa-solid fa-bolt"></i>
+        </div>
+        <div>
+          <h1 class="text-lg font-bold text-slate-900 leading-tight">Flock Energy <span class="font-normal text-slate-500">| Urja Modern Ops</span></h1>
+          <p class="text-xs text-slate-500">High-Performance REST API Service over Legacy Urja Portal</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-4 text-sm">
+        <span id="health-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+          <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span> Connecting...
+        </span>
+        <div class="flex items-center gap-1">
+          <input id="api-token" type="password" autocomplete="off" placeholder="API access token"
+                 class="w-40 text-xs border border-slate-300 rounded-lg px-2 py-1.5">
+          <button onclick="saveApiToken()" class="text-xs border border-slate-200 px-2 py-1.5 rounded-lg hover:border-emerald-300">
+            Set token
+          </button>
+        </div>
+        <a href="/docs" target="_blank" class="text-slate-600 hover:text-emerald-600 font-medium text-xs flex items-center gap-1 border border-slate-200 px-3 py-1.5 rounded-lg hover:border-emerald-300 transition">
+          <i class="fa-solid fa-book"></i> Interactive Docs (Swagger)
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-6">
+
+    <!-- Metrics Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Smart Meters</div>
+        <div class="mt-2 text-3xl font-bold text-slate-900" id="stat-meters">—</div>
+        <div class="mt-1 text-xs text-emerald-600 flex items-center gap-1 font-medium"><i class="fa-solid fa-check-circle"></i> 100% indexed in memory</div>
+      </div>
+      <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Distribution Transformers</div>
+        <div class="mt-2 text-3xl font-bold text-slate-900" id="stat-dts">—</div>
+        <div class="mt-1 text-xs text-slate-500">Across 40 load centers</div>
+      </div>
+      <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Operational Health</div>
+        <div class="mt-2 text-2xl font-bold text-emerald-600" id="stat-health">Healthy</div>
+        <div class="mt-1 text-xs text-slate-500">Installed / Decommissioned / Faulty</div>
+      </div>
+      <div class="bg-white rounded-xl p-5 border border-slate-200 shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Sync Status & Freshness</div>
+        <div class="mt-2 text-sm font-semibold text-slate-800 flex items-center justify-between">
+          <span id="stat-sync-time">Just now</span>
+          <button onclick="refreshSync()" class="text-xs bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded text-slate-700 font-medium transition">
+            <i class="fa-solid fa-rotate"></i> Sync
+          </button>
+        </div>
+        <div class="mt-2 text-xs text-slate-400">TTL: 900s (Auto-refresh)</div>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="border-b border-slate-200 flex gap-6">
+      <button onclick="switchTab('meters')" id="tab-meters" class="pb-3 font-semibold text-sm border-b-2 border-emerald-600 text-emerald-600 flex items-center gap-2">
+        <i class="fa-solid fa-gauge"></i> Smart Meters Explorer
+      </button>
+      <button onclick="switchTab('transformers')" id="tab-transformers" class="pb-3 font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center gap-2">
+        <i class="fa-solid fa-network-wired"></i> Transformers & Feeders
+      </button>
+      <button onclick="switchTab('hierarchy')" id="tab-hierarchy" class="pb-3 font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center gap-2">
+        <i class="fa-solid fa-sitemap"></i> 7-Tier Grid Hierarchy
+      </button>
+    </div>
+
+    <!-- Tab 1: Meters Explorer -->
+    <div id="view-meters" class="space-y-4">
+      <!-- Search & Filters Bar -->
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-wrap gap-3 items-center justify-between">
+        <div class="flex-1 min-w-[260px] relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+          <input type="text" id="filter-q" placeholder="Search by Meter ID (e.g. J100000) or Serial (e.g. SE33962)..." 
+                 class="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                 oninput="debounceMetersQuery()">
+        </div>
+        <div class="flex flex-wrap gap-2 text-sm">
+          <select id="filter-make" onchange="loadMeters(1)" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm focus:ring-emerald-500">
+            <option value="">All Makes</option>
+            <option value="HPL">HPL</option>
+            <option value="Secure">Secure</option>
+            <option value="Genus">Genus</option>
+            <option value="L&T">L&T</option>
+            <option value="Allied">Allied</option>
+          </select>
+          <select id="filter-phase" onchange="loadMeters(1)" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm focus:ring-emerald-500">
+            <option value="">All Phases</option>
+            <option value="single">Single Phase</option>
+            <option value="three">Three Phase</option>
+          </select>
+          <select id="filter-status" onchange="loadMeters(1)" class="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm focus:ring-emerald-500">
+            <option value="">All Statuses</option>
+            <option value="Installed">Installed</option>
+            <option value="Decommissioned">Decommissioned</option>
+            <option value="Faulty">Faulty</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Meters Table -->
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th class="px-5 py-3">Meter ID</th>
+                <th class="px-5 py-3">Hardware Serial</th>
+                <th class="px-5 py-3">Manufacturer</th>
+                <th class="px-5 py-3">Phase Type</th>
+                <th class="px-5 py-3">Status</th>
+                <th class="px-5 py-3">Transformer</th>
+                <th class="px-5 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="meters-tbody" class="divide-y divide-slate-100">
+              <tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">Loading meters dataset...</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination Footer -->
+        <div class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+          <span id="meters-pagination-info">Showing 0 of 0 meters</span>
+          <div class="flex gap-2">
+            <button id="btn-prev" onclick="changePage(-1)" class="px-3 py-1.5 rounded bg-white border border-slate-300 font-medium hover:bg-slate-50 disabled:opacity-40">Previous</button>
+            <button id="btn-next" onclick="changePage(1)" class="px-3 py-1.5 rounded bg-white border border-slate-300 font-medium hover:bg-slate-50 disabled:opacity-40">Next</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Transformers & Feeders -->
+    <div id="view-transformers" class="space-y-4 hidden">
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+          <h2 class="font-semibold text-slate-900">40 Distribution Transformers (DTs) with Active Load</h2>
+          <span class="text-xs text-slate-500">Grid Level 7 Nodes</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 border-b border-slate-200 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <tr>
+                <th class="px-5 py-3">DT Code</th>
+                <th class="px-5 py-3">Name / Location</th>
+                <th class="px-5 py-3">Feeder Code</th>
+                <th class="px-5 py-3">Capacity (kVA)</th>
+                <th class="px-5 py-3">Connected Meters</th>
+              </tr>
+            </thead>
+            <tbody id="transformers-tbody" class="divide-y divide-slate-100">
+              <tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">Loading transformers...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Grid Hierarchy -->
+    <div id="view-hierarchy" class="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hidden">
+      <div class="mb-4">
+        <h2 class="text-base font-semibold text-slate-900">Reconstructed Electrical Distribution Network</h2>
+        <p class="text-xs text-slate-500 mt-1">Full 7-Tier Grid Topology: Zone &rarr; Circle &rarr; Division &rarr; Subdivision &rarr; Substation &rarr; Feeder &rarr; DT &rarr; Smart Meters</p>
+      </div>
+      <div id="hierarchy-tree-container" class="space-y-2 text-sm font-mono text-slate-700 overflow-y-auto max-h-[600px] p-2 bg-slate-50 rounded-lg border border-slate-200">
+        Loading grid hierarchy...
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Consumption & Detail Drawer Modal -->
+  <div id="meter-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto flex flex-col border border-slate-200">
+      <div class="p-5 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+        <div>
+          <div class="flex items-center gap-3">
+            <h2 id="modal-meter-id" class="text-xl font-bold text-slate-900">Meter</h2>
+            <span id="modal-status-badge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">Installed</span>
+          </div>
+          <p id="modal-serial" class="text-xs text-slate-500 mt-0.5">Serial: —</p>
+        </div>
+        <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 p-2 text-lg">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-6">
+        <!-- Metadata cards -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
+          <div><span class="text-slate-400 block">Manufacturer</span><strong id="modal-make" class="text-slate-800 text-sm">—</strong></div>
+          <div><span class="text-slate-400 block">Phase Type</span><strong id="modal-phase" class="text-slate-800 text-sm">—</strong></div>
+          <div><span class="text-slate-400 block">Transformer</span><strong id="modal-dt" class="text-slate-800 text-sm">—</strong></div>
+          <div><span class="text-slate-400 block">GPS Coordinates</span><strong id="modal-geo" class="text-slate-800 text-sm">—</strong></div>
+        </div>
+
+        <!-- Hierarchy Breadcrumbs -->
+        <div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-1">Network Path</span>
+          <div id="modal-hierarchy" class="text-xs flex flex-wrap items-center gap-1.5 text-slate-600 bg-slate-100 p-2.5 rounded-lg border border-slate-200">
+            Loading...
+          </div>
+        </div>
+
+        <!-- Consumption Chart -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 block">Time-Series Consumption</span>
+              <span id="modal-readings-count" class="text-xs text-slate-500">Loading interval readings...</span>
+            </div>
+            <div id="modal-consumption-summary" class="text-xs text-right text-emerald-700 font-medium"></div>
+          </div>
+          <div class="bg-white p-3 rounded-xl border border-slate-200 h-64 relative">
+            <canvas id="consumptionChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Recent Readings Table -->
+        <div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-2">Latest Register Readings and Interval Deltas</span>
+          <div class="max-h-48 overflow-y-auto border border-slate-200 rounded-lg">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase sticky top-0">
+                <tr>
+                  <th class="px-3 py-2">Timestamp (ISO)</th>
+                  <th class="px-3 py-2">Cumulative kWh</th>
+                  <th class="px-3 py-2">Interval kWh</th>
+                  <th class="px-3 py-2">kVAh</th>
+                  <th class="px-3 py-2">Voltage R (V)</th>
+                  <th class="px-3 py-2">Interval Energy Ratio</th>
+                </tr>
+              </thead>
+              <tbody id="modal-readings-tbody" class="divide-y divide-slate-100">
+                <tr><td colspan="6" class="px-3 py-4 text-center text-slate-400">Loading readings...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500">
+    Flock Energy Technical Assessment — Clean REST API Service over Urja Meter Ops Portal
+  </footer>
+
+  <script>
+    let currentPage = 1;
+    let totalPages = 1;
+    let debounceTimer = null;
+    let chartInstance = null;
+
+    async function init() {
+      const savedToken = sessionStorage.getItem('apiAccessToken');
+      if (!savedToken) {
+        setHealthBadge('API token required');
+        return;
+      }
+      document.getElementById('api-token').value = savedToken;
+      await checkHealth();
+      await loadMeters(1);
+      await loadTransformers();
+      await loadHierarchy();
+    }
+
+    function setHealthBadge(message) {
+      const badge = document.getElementById('health-badge');
+      badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800';
+      badge.innerText = message;
+    }
+
+    function saveApiToken() {
+      const token = document.getElementById('api-token').value.trim();
+      if (token.length < 16) {
+        alert('Enter the API_ACCESS_TOKEN configured for the service (at least 16 characters).');
+        return;
+      }
+      sessionStorage.setItem('apiAccessToken', token);
+      init();
+    }
+
+    function apiFetch(url, options = {}) {
+      const headers = new Headers(options.headers || {});
+      headers.set('Authorization', `Bearer ${sessionStorage.getItem('apiAccessToken') || ''}`);
+      return fetch(url, { ...options, headers });
+    }
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        const badge = document.getElementById('health-badge');
+        if (data.status === 'ok') {
+          badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800';
+          badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-500"></span> Portal Online';
+        } else {
+          badge.className = 'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800';
+          badge.innerHTML = '<span class="w-2 h-2 rounded-full bg-amber-500"></span> Degraded';
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function switchTab(tab) {
+      ['meters', 'transformers', 'hierarchy'].forEach(t => {
+        document.getElementById(`view-${t}`).classList.add('hidden');
+        document.getElementById(`tab-${t}`).className = 'pb-3 font-medium text-sm text-slate-500 hover:text-slate-800 border-b-2 border-transparent flex items-center gap-2';
+      });
+      document.getElementById(`view-${tab}`).classList.remove('hidden');
+      document.getElementById(`tab-${tab}`).className = 'pb-3 font-semibold text-sm border-b-2 border-emerald-600 text-emerald-600 flex items-center gap-2';
+    }
+
+    function debounceMetersQuery() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => loadMeters(1), 300);
+    }
+
+    function changePage(delta) {
+      const next = currentPage + delta;
+      if (next >= 1 && next <= totalPages) {
+        loadMeters(next);
+      }
+    }
+
+    async function loadMeters(page = 1) {
+      currentPage = page;
+      const q = document.getElementById('filter-q').value;
+      const make = document.getElementById('filter-make').value;
+      const phase = document.getElementById('filter-phase').value;
+      const status = document.getElementById('filter-status').value;
+
+      const params = new URLSearchParams({ page: page, page_size: 20 });
+      if (q) params.set('q', q);
+      if (make) params.set('make', make);
+      if (phase) params.set('phase_type', phase);
+      if (status) params.set('install_status', status);
+
+      try {
+        const res = await apiFetch(`/api/v1/meters?${params.toString()}`);
+        const data = await res.json();
+
+        document.getElementById('stat-meters').innerText = data.total;
+        totalPages = data.pages;
+        document.getElementById('meters-pagination-info').innerText = `Showing page ${data.page} of ${data.pages} (${data.total} meters)`;
+        document.getElementById('btn-prev').disabled = data.page <= 1;
+        document.getElementById('btn-next').disabled = data.page >= data.pages;
+
+        const tbody = document.getElementById('meters-tbody');
+        if (!data.items || data.items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">No meters found matching criteria.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.items.map(m => {
+          let statusBadge = 'bg-slate-100 text-slate-700';
+          if (m.install_status === 'Installed') statusBadge = 'bg-emerald-100 text-emerald-800';
+          if (m.install_status === 'Faulty') statusBadge = 'bg-rose-100 text-rose-800';
+          if (m.install_status === 'Decommissioned') statusBadge = 'bg-amber-100 text-amber-800';
+
+          return `
+            <tr class="hover:bg-slate-50 transition cursor-pointer" onclick="openMeterModal('${m.meter_id}')">
+              <td class="px-5 py-3 font-semibold text-emerald-600">${m.meter_id}</td>
+              <td class="px-5 py-3 text-slate-600 font-mono text-xs">${m.serial_no}</td>
+              <td class="px-5 py-3 text-slate-700">${m.make}</td>
+              <td class="px-5 py-3 text-slate-500 capitalize">${m.phase_type}</td>
+              <td class="px-5 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-medium ${statusBadge}">${m.install_status}</span></td>
+              <td class="px-5 py-3 text-slate-500 font-mono text-xs">${m.dt_code}</td>
+              <td class="px-5 py-3 text-right">
+                <button class="text-xs bg-slate-100 hover:bg-emerald-100 hover:text-emerald-700 px-2.5 py-1 rounded font-medium transition">
+                  Inspect &rarr;
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadTransformers() {
+      try {
+        const res = await apiFetch('/api/v1/transformers?page_size=100');
+        const data = await res.json();
+        document.getElementById('stat-dts').innerText = data.total;
+
+        const tbody = document.getElementById('transformers-tbody');
+        tbody.innerHTML = data.items.map(t => `
+          <tr class="hover:bg-slate-50">
+            <td class="px-5 py-3 font-semibold text-slate-800 font-mono text-xs">${t.code}</td>
+            <td class="px-5 py-3 text-slate-700">${t.name}</td>
+            <td class="px-5 py-3 text-slate-500 font-mono text-xs">${t.feeder_code}</td>
+            <td class="px-5 py-3 text-slate-600">${t.capacity_kva} kVA</td>
+            <td class="px-5 py-3 font-semibold text-emerald-600">${t.connected_meters_count} meters</td>
+          </tr>
+        `).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadHierarchy() {
+      try {
+        const res = await apiFetch('/api/v1/hierarchy');
+        const data = await res.json();
+        const container = document.getElementById('hierarchy-tree-container');
+
+        function renderNode(node) {
+          const hasChildren = node.children && node.children.length > 0;
+          return `
+            <div class="tree-node my-1">
+              <div class="flex items-center gap-2 py-0.5">
+                <span class="text-slate-400 text-xs">${hasChildren ? '▼' : '•'}</span>
+                <span class="px-1.5 py-0.5 rounded text-[11px] uppercase font-bold tracking-wide ${node.level === 'dt' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'}">${node.level}</span>
+                <span class="font-semibold text-slate-800">${node.name}</span>
+                <span class="text-xs text-slate-400 font-normal">(${node.code})</span>
+                <span class="text-xs text-emerald-600 font-medium ml-auto">${node.meter_count} meters</span>
+              </div>
+              ${hasChildren ? `<div class="tree-children">${node.children.map(renderNode).join('')}</div>` : ''}
+            </div>
+          `;
+        }
+
+        container.innerHTML = data.tree.map(renderNode).join('');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function openMeterModal(meterId) {
+      const modal = document.getElementById('meter-modal');
+      modal.classList.remove('hidden');
+
+      try {
+        const [meterRes, energyRes] = await Promise.all([
+          apiFetch(`/api/v1/meters/${meterId}`),
+          apiFetch(`/api/v1/meters/${meterId}/consumption`)
+        ]);
+
+        const meter = await meterRes.json();
+        const energy = await energyRes.json();
+
+        document.getElementById('modal-meter-id').innerText = meter.meter_id;
+        document.getElementById('modal-serial').innerText = `Hardware Serial: ${meter.serial_no} • Build: ${meter.build || 'N/A'}`;
+        document.getElementById('modal-make').innerText = meter.make;
+        document.getElementById('modal-phase').innerText = meter.phase_type.toUpperCase();
+        document.getElementById('modal-dt').innerText = meter.dt_code;
+        document.getElementById('modal-geo').innerText = meter.geo ? `${meter.geo.latitude.toFixed(4)}, ${meter.geo.longitude.toFixed(4)}` : 'N/A';
+
+        const statusBadge = document.getElementById('modal-status-badge');
+        statusBadge.innerText = meter.install_status;
+        if (meter.install_status === 'Installed') statusBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800';
+        else if (meter.install_status === 'Faulty') statusBadge = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-100 text-rose-800';
+        else statusBadge.className = 'px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800';
+
+        // Hierarchy path
+        if (meter.hierarchy) {
+          const h = meter.hierarchy;
+          const parts = [
+            h.zone && `Zone: ${h.zone.name}`,
+            h.circle && `Circle: ${h.circle.name}`,
+            h.division && `Division: ${h.division.name}`,
+            h.subdivision && `Subdivision: ${h.subdivision.name}`,
+            h.substation && `Sub Station: ${h.substation.name}`,
+            h.feeder && `Feeder: ${h.feeder.name}`,
+            h.dt && `DT: ${h.dt.name}`,
+          ].filter(Boolean);
+          document.getElementById('modal-hierarchy').innerHTML = parts.map((p, idx) => `
+            <span>${p}</span>${idx < parts.length - 1 ? '<span class="text-slate-300 font-bold">›</span>' : ''}
+          `).join('');
+        }
+
+        // Summary
+        const s = energy.summary;
+        document.getElementById('modal-readings-count').innerText = `${s.reading_count} register readings, ${s.interval_count} valid intervals from ${s.period_start?.slice(0, 10) || 'N/A'} to ${s.period_end?.slice(0, 10) || 'N/A'}`;
+        document.getElementById('modal-consumption-summary').innerHTML = `
+          Total interval kWh: <strong>${s.total_kwh ?? 'N/A'}</strong> | Avg interval kWh: <strong>${s.avg_interval_kwh ?? 'N/A'}</strong> | Avg Voltage: <strong>${s.avg_voltage_r ?? 'N/A'} V</strong>
+        `;
+
+        // Render chart
+        renderChart(energy.readings);
+
+        // Render readings table
+        const rTbody = document.getElementById('modal-readings-tbody');
+        rTbody.innerHTML = energy.readings.slice(-30).reverse().map(r => `
+          <tr class="hover:bg-slate-50">
+            <td class="px-3 py-1.5 font-mono text-slate-600">${r.timestamp_iso}</td>
+            <td class="px-3 py-1.5 font-semibold text-slate-800">${r.kwh ?? '—'}</td>
+            <td class="px-3 py-1.5 text-slate-600">${r.interval_kwh ?? '—'} <span class="text-xs">${r.interval_status}</span></td>
+            <td class="px-3 py-1.5 text-slate-600">${r.kvah ?? '—'}</td>
+            <td class="px-3 py-1.5 text-slate-600">${r.voltage_r ?? '—'}</td>
+            <td class="px-3 py-1.5 text-slate-500">${r.interval_power_factor ?? '—'}</td>
+          </tr>
+        `).join('');
+
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function renderChart(readings) {
+      const ctx = document.getElementById('consumptionChart').getContext('2d');
+      if (chartInstance) chartInstance.destroy();
+
+      const sample = readings.slice(-48); // last 48 intervals (24 hours)
+      const labels = sample.map(r => r.timestamp_iso.slice(11, 16));
+      const kwhData = sample.map(r => r.kwh);
+      const voltData = sample.map(r => r.voltage_r);
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Cumulative Active Energy (kWh)',
+              data: kwhData,
+              borderColor: '#059669',
+              backgroundColor: 'rgba(5, 150, 105, 0.08)',
+              yAxisID: 'yKwh',
+              tension: 0.3,
+              fill: true,
+            },
+            {
+              label: 'Voltage R (V)',
+              data: voltData,
+              borderColor: '#6366f1',
+              borderDash: [4, 4],
+              yAxisID: 'yVolt',
+              tension: 0.2,
+              fill: false,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: { mode: 'index', intersect: false }
+          },
+          scales: {
+            yKwh: {
+              type: 'linear',
+              position: 'left',
+              title: { display: true, text: 'Cumulative kWh', font: { size: 10 } },
+            },
+            yVolt: {
+              type: 'linear',
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              title: { display: true, text: 'Volts (V)', font: { size: 10 } },
+            }
+          }
+        }
+      });
+    }
+
+    function closeModal() {
+      document.getElementById('meter-modal').classList.add('hidden');
+    }
+
+    async function refreshSync() {
+      try {
+        const res = await apiFetch('/api/v1/sync', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.message || `Sync failed (${res.status})`);
+        document.getElementById('stat-sync-time').innerText = 'Synced just now';
+        await loadMeters(currentPage);
+        await loadTransformers();
+        await loadHierarchy();
+      } catch (e) {
+        alert('Sync error: ' + e.message);
+      }
+    }
+
+    window.onclick = function(e) {
+      const modal = document.getElementById('meter-modal');
+      if (e.target === modal) closeModal();
+    }
+
+    init();
+  </script>
+</body>
+</html>
